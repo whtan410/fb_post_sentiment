@@ -16,9 +16,97 @@ export default function Home() {
   const [dateTo, setDateTo] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(10)
+  const [notificationPermission, setNotificationPermission] = useState('default')
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [audioEnabled, setAudioEnabled] = useState(true)
+
+  // Request notification permission on mount
+  useEffect(() => {
+    if ('Notification' in window) {
+      setNotificationPermission(Notification.permission)
+      if (Notification.permission === 'default') {
+        Notification.requestPermission().then(permission => {
+          setNotificationPermission(permission)
+        })
+      }
+    }
+  }, [])
+
+  // Update favicon with notification badge
+  useEffect(() => {
+    if (unreadCount > 0) {
+      // Update document title with count
+      document.title = `(${unreadCount}) Facebook Notifications`
+
+      // Create a canvas to draw badge on favicon
+      const canvas = document.createElement('canvas')
+      canvas.width = 32
+      canvas.height = 32
+      const ctx = canvas.getContext('2d')
+
+      // Draw red circle
+      ctx.fillStyle = '#ff0000'
+      ctx.beginPath()
+      ctx.arc(24, 8, 8, 0, 2 * Math.PI)
+      ctx.fill()
+
+      // Draw white text
+      ctx.fillStyle = '#ffffff'
+      ctx.font = 'bold 14px Arial'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(unreadCount > 9 ? '9+' : unreadCount.toString(), 24, 8)
+
+      // Update favicon
+      const link = document.querySelector("link[rel*='icon']") || document.createElement('link')
+      link.type = 'image/x-icon'
+      link.rel = 'shortcut icon'
+      link.href = canvas.toDataURL()
+      document.getElementsByTagName('head')[0].appendChild(link)
+    } else {
+      document.title = 'Facebook Notifications'
+      // Reset to default favicon if exists
+      const link = document.querySelector("link[rel*='icon']")
+      if (link) {
+        link.href = '/favicon.ico'
+      }
+    }
+  }, [unreadCount])
+
+  // Notification function with sound
+  function showNotification(title, body) {
+    // Play notification sound
+    if (audioEnabled) {
+      const audio = new Audio('/notification.mp3')
+      audio.volume = 0.5
+      audio.play().catch(err => console.log('Audio play failed:', err))
+    }
+
+    // Show browser notification
+    if (notificationPermission === 'granted') {
+      new Notification(title, {
+        body: body,
+        icon: '/favicon.ico',
+        badge: '/favicon.ico',
+        tag: 'facebook-notification',
+        requireInteraction: false
+      })
+    }
+
+    // Increment unread count
+    setUnreadCount(prev => prev + 1)
+  }
 
   useEffect(() => {
     fetchNotifications()
+
+    // Set up notification interval every 20 minutes (1200000ms)
+    const notificationInterval = setInterval(() => {
+      showNotification(
+        'Facebook Notification',
+        'New activity on your posts! Check your dashboard.'
+      )
+    }, 1200000) // 1200000ms = 20 minutes
 
     // Set up automatic polling every 5 minutes (300000ms)
     const pollInterval = setInterval(() => {
@@ -38,16 +126,21 @@ export default function Home() {
         (payload) => {
           console.log('Real-time change detected:', payload)
           fetchNotifications(true) // Fetch new data when changes occur
+          showNotification(
+            'New Facebook Activity',
+            'Real-time update detected on your posts!'
+          )
         }
       )
       .subscribe()
 
     // Cleanup on unmount
     return () => {
+      clearInterval(notificationInterval)
       clearInterval(pollInterval)
       supabase.removeChannel(channel)
     }
-  }, [])
+  }, [notificationPermission, audioEnabled])
 
   async function fetchNotifications(silent = false) {
     try {
@@ -85,6 +178,14 @@ export default function Home() {
     setDateFrom('')
     setDateTo('')
     setCurrentPage(1)
+  }
+
+  function clearUnreadCount() {
+    setUnreadCount(0)
+  }
+
+  function toggleAudio() {
+    setAudioEnabled(prev => !prev)
   }
 
   function handleSort(column) {
@@ -231,6 +332,50 @@ export default function Home() {
               <p className="text-gray-600">Monitor and track your social media engagement</p>
             </div>
             <div className="flex items-center gap-4">
+              {/* Notification Badge */}
+              {unreadCount > 0 && (
+                <button
+                  onClick={clearUnreadCount}
+                  className="relative px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors flex items-center gap-2 font-medium shadow-sm"
+                >
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
+                  </svg>
+                  <span className="bg-red-600 text-white rounded-full px-2 py-0.5 text-xs font-bold">
+                    {unreadCount}
+                  </span>
+                  Clear
+                </button>
+              )}
+
+              {/* Audio Toggle */}
+              <button
+                onClick={toggleAudio}
+                className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-2 font-medium shadow-sm ${
+                  audioEnabled
+                    ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                {audioEnabled ? (
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+                  </svg>
+                ) : (
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>
+                  </svg>
+                )}
+                {audioEnabled ? 'Sound On' : 'Sound Off'}
+              </button>
+
+              {/* Notification Permission Status */}
+              {notificationPermission !== 'granted' && (
+                <div className="text-xs text-orange-600 bg-orange-50 px-3 py-2 rounded-lg border border-orange-200">
+                  Enable notifications in browser settings
+                </div>
+              )}
+
               {lastUpdated && (
                 <div className="text-sm text-gray-600 bg-white px-4 py-2 rounded-lg shadow-sm">
                   <span className="font-medium">Last updated:</span> {lastUpdated.toLocaleTimeString()}
@@ -258,6 +403,21 @@ export default function Home() {
                 </svg>
                 {isRefreshing ? 'Refreshing...' : 'Refresh'}
               </button>
+            </div>
+          </div>
+
+          {/* Notification Info Banner */}
+          <div className="mb-4 bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200 rounded-xl p-4 flex items-center gap-3">
+            <svg className="w-6 h-6 text-blue-600 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
+            </svg>
+            <div className="flex-1">
+              <p className="text-sm font-medium text-gray-800">
+                Browser notifications enabled! You'll receive alerts every minute with sound and visual badges.
+              </p>
+              <p className="text-xs text-gray-600 mt-1">
+                Notifications will appear even when this tab is in the background.
+              </p>
             </div>
           </div>
 
